@@ -11,16 +11,68 @@ int main() {
     session_options.SetIntraOpNumThreads(1);
     session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_BASIC);
 
+    session_options.RegisterCustomOpsLibrary(L"ortextensions.dll");
+
     // 2. Load the Model
     // Ensure "model.onnx" is in the same directory as the binary or provide full path
 #ifdef _WIN32
     const wchar_t* model_path = L"D:\\Github\\inpherens\\resnet50-v2-7.onnx";
+    const wchar_t* tokenizer_path = L"D:\\Github\\inpherens\\tokenizer_convert\\tokenizer.onnx";
 #else
     const char* model_path = "model.onnx";
 #endif
 
     std::cout << "Loading model..." << std::endl;
     try {
+        //// The line loads the customop library into ONNXRuntime engine to load the ONNX model with the custom op
+        //Ort::ThrowOnError(Ort::GetApi().RegisterCustomOpsLibrary((OrtSessionOptions*)session_options, custom_op_library_filename, &handle));
+
+        Ort::Session session_tokenizer(env, tokenizer_path, session_options);
+
+    // The model typically expects a 1D tensor of strings (batch_size)
+        std::vector<int64_t> input_shape = { 1 }; // Batch size of 1
+
+        Ort::AllocatorWithDefaultOptions allocator;
+
+        //Ort::Value::CreateTensor<float>
+
+
+        std::string input_data{ "I am a cat what is going on" };
+        const char* const input_strings[] = { input_data.c_str() };
+        std::vector<int64_t> input_dims = { 1, 1 };
+
+        Ort::Value input_tensor = Ort::Value::CreateTensor(allocator, input_shape.data(), input_shape.size(), ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING);
+        input_tensor.FillStringTensor(input_strings, 1U);
+
+        // 5. Run Inference
+        const char* input_names[] = { "input_text" }; // Default name from gen_processing_models
+        const char* output_names[] = { "input_ids", "attention_mask" }; // Typical outputs
+
+        auto output_tensors = session_tokenizer.Run(
+            Ort::RunOptions{ nullptr },
+            input_names,
+            &input_tensor,
+            1,
+            output_names,
+            2 // We are requesting 2 outputs
+        );
+
+        // 6. Process Output (Token IDs)
+        // "input_ids" is usually the first output (int64 tensor)
+        int64_t* token_ids = output_tensors[0].GetTensorMutableData<int64_t>();
+        size_t num_tokens = output_tensors[0].GetTensorTypeAndShapeInfo().GetElementCount();
+
+        std::cout << "Original Prompt: \"" << input_data << "\"" << std::endl;
+        std::cout << "Token IDs: [ ";
+        for (size_t i = 0; i < num_tokens; i++) {
+            std::cout << token_ids[i] << " ";
+        }
+        std::cout << "]" << std::endl;
+
+        return 0;
+
+        
+        /*
         Ort::Session session(env, model_path, session_options);
 
         // 3. Define Input/Output Info
@@ -79,6 +131,8 @@ int main() {
             std::cout << floatarr[i] << (i < 4 ? ", " : "");
         }
         std::cout << "]" << std::endl;
+
+        */
 
     } catch (const Ort::Exception& e) {
         std::cerr << "ONNX Runtime Error: " << e.what() << std::endl;
